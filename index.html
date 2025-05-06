@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kocia Przeprawa</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #222; }
+    #gameCanvas { display: block; background: #eee; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // --- stan gry ---
+    const state = {
+      cat: { x: 400, y: 550, w: 50, h: 50, speed: 5 },
+      keys: {},
+      tunaczki: [],         // używamy ASCII nazwy po polsku bez diakrytyków
+      dusze: [],
+      przeszkody: [],
+      score: 0,
+      soulsCarried: 0,
+      soulsDelivered: 0,
+      lives: 3,
+      portalX: 700,
+      portalY: 500,
+      portalW: 80,
+      portalH: 100
+    };
+
+    // --- wejście ---
+    window.addEventListener('keydown', e => state.keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => state.keys[e.key.toLowerCase()] = false);
+
+    // --- generatory ---
+    function spawnTuna() {
+      state.tunaczki.push({
+        x: Math.random() * (canvas.width - 30),
+        y: -30,
+        w: 30,
+        h: 30,
+        speed: 2 + Math.random() * 3,
+        good: Math.random() < 0.8
+      });
+    }
+    function spawnSoul() {
+      state.dusze.push({
+        x: Math.random() * (canvas.width - 20),
+        y: -20,
+        w: 20,
+        h: 20,
+        speed: 2
+      });
+    }
+    function spawnObstacle() {
+      state.przeszkody.push({
+        x: Math.random() * (canvas.width - 40),
+        y: -40,
+        w: 40,
+        h: 40,
+        speed: 3 + Math.random() * 2
+      });
+    }
+    setInterval(spawnTuna, 1000);
+    setInterval(spawnSoul, 5000);
+    setInterval(spawnObstacle, 2000);
+
+    // --- kolizja ---
+    function collides(a, b) {
+      return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
+    }
+
+    // --- aktualizacja ---
+    function update() {
+      const cat = state.cat;
+      // ruch
+      if (state.keys['arrowleft'] || state.keys['a']) cat.x -= cat.speed;
+      if (state.keys['arrowright'] || state.keys['d']) cat.x += cat.speed;
+      cat.x = Math.max(0, Math.min(canvas.width - cat.w, cat.x));
+
+      // ruch obiektów i usuwanie poza ekranem
+      state.tunaczki = state.tunaczki.filter(t => t.y < canvas.height + 50);
+      state.dusze     = state.dusze.filter(s => s.y < canvas.height + 50);
+      state.przeszkody= state.przeszkody.filter(o => o.y < canvas.height + 50);
+      state.tunaczki.forEach(t => t.y += t.speed);
+      state.dusze.forEach(s => s.y += s.speed);
+      state.przeszkody.forEach(o => o.y += o.speed);
+
+      // zbieranie tuńczyków (iteracja wstecz)
+      for (let i = state.tunaczki.length - 1; i >= 0; i--) {
+        const t = state.tunaczki[i];
+        if (collides(cat, t)) {
+          state.score += t.good ? 10 : -5;
+          state.tunaczki.splice(i, 1);
+        }
+      }
+      // zbieranie dusz
+      for (let i = state.dusze.length - 1; i >= 0; i--) {
+        const s = state.dusze[i];
+        if (collides(cat, s)) {
+          state.soulsCarried++;
+          state.dusze.splice(i, 1);
+        }
+      }
+      // unikanie przeszkód
+      for (let i = state.przeszkody.length - 1; i >= 0; i--) {
+        const o = state.przeszkody[i];
+        if (collides(cat, o)) {
+          state.lives--;
+          state.przeszkody.splice(i, 1);
+        }
+      }
+      // dostarczenie dusz do portalu (tylko jeśli jest co dostarczyć)
+      const portalBox = { x: state.portalX, y: state.portalY, w: state.portalW, h: state.portalH };
+      if (state.soulsCarried > 0 && collides(cat, portalBox)) {
+        state.soulsDelivered += state.soulsCarried;
+        state.soulsCarried = 0;
+      }
+    }
+
+    // --- rysowanie ---
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // portal
+      ctx.fillStyle = 'purple';
+      ctx.fillRect(state.portalX, state.portalY, state.portalW, state.portalH);
+      // kot
+      ctx.fillStyle = 'orange';
+      ctx.fillRect(state.cat.x, state.cat.y, state.cat.w, state.cat.h);
+      // tuńczyki
+      state.tunaczki.forEach(t => {
+        ctx.fillStyle = t.good ? 'blue' : 'brown';
+        ctx.fillRect(t.x, t.y, t.w, t.h);
+      });
+      // dusze
+      state.dusze.forEach(s => {
+        ctx.fillStyle = 'white'; ctx.globalAlpha = 0.7;
+        ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.globalAlpha = 1;
+      });
+      // przeszkody
+      state.przeszkody.forEach(o => {
+        ctx.fillStyle = 'red'; // oznaczamy złe moce czerwonym
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+      });
+      // UI
+      ctx.fillStyle = '#000'; ctx.font = '20px sans-serif';
+      ctx.fillText('Punkty: ' + state.score, 10, 25);
+      ctx.fillText('Dusze przy sobie: ' + state.soulsCarried, 300, 25);
+      ctx.fillText('Dusze dostarczone: ' + state.soulsDelivered, 300, 50);
+      ctx.fillText('Życia: ' + state.lives, 650, 25);
+    }
+
+    // --- pętla gry ---
+    function gameLoop() {
+      update(); draw();
+      if (state.lives > 0) requestAnimationFrame(gameLoop);
+      else {
+        ctx.fillStyle = 'red'; ctx.font = '50px sans-serif';
+        ctx.fillText('KONIEC GRY', canvas.width/2 - 130, canvas.height/2);
+      }
+    }
+    gameLoop();
+  </script>
+</body>
+</html>
